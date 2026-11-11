@@ -122,6 +122,9 @@ submission.
   both exterior slots, so it runs on every eval. An eval with two exterior views, such as RoboLab or
   a DROID rig, runs better on `droid_3cam`: to select it in your own image, change `droid` to
   `droid_3cam` in the recipe's `ENTRYPOINT`.
+- The client plays each chunk whole: 32 actions in 2.1 s. To play less of each chunk in your own image,
+  build the recipe with `--build-arg FLUX_HORIZON_SEC=<seconds>`. A session on a remote endpoint states
+  `horizon_sec` in its query.
 - BFL's server compiles the model for about 140 s, and port 8000 binds after it. The GPU memory peaks
   at about 33 000 MiB.
 - `black-forest-labs/flux-3-action-droid` and `black-forest-labs/flux-3-action-base` are gated. Accept

@@ -10,8 +10,10 @@ from typing import Any
 
 import numpy as np
 import pytest
+from positronic_model_server import keys as offboard_keys
 from positronic_model_server import server_wire, websocket_wire
 from positronic_model_server.protocol import AUTH_HEADER, bearer
+from positronic_model_server.spec import ARGS, SEQ
 from positronic_wire import websocket, wire
 from positronic_wire.roboarena import TextAnswer
 
@@ -56,8 +58,21 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def _infer_in_a_session(policy_server: PolicyServer, obs: dict[str, Any]) -> list[dict[str, Any]]:
-    """The commands one session gets for `obs`, from `policy_server` behind the run's token."""
+def _observation() -> dict[str, Any]:
+    """What an eval that renders one exterior view sends, as MolmoSpaces does."""
+    return {
+        keys.WRIST_IMAGE: np.zeros((720, 1280, 3), dtype=np.uint8),
+        keys.EXTERIOR_IMAGE: np.zeros((480, 640, 3), dtype=np.uint8),
+        keys.JOINTS: np.arange(7, dtype=np.float32),
+        keys.GRIP: 0.25,
+        keys.TASK: 'put the cube in the bowl',
+    }
+
+
+def _session(
+    policy_server: PolicyServer, obs: dict[str, Any], query: str = ''
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The metadata and the commands of one inference of one session on `query`, behind the run's token."""
     wires = [websocket_wire.WebsocketWire(server_wire.ServedHostPort('127.0.0.1', 0))]
     ready = threading.Event()
     thread = threading.Thread(target=policy_server.serve, args=(wires, ready.set), daemon=True)
@@ -66,12 +81,12 @@ def _infer_in_a_session(policy_server: PolicyServer, obs: dict[str, Any]) -> lis
         assert ready.wait(timeout=30)
         served = wires[0].served_address
         assert isinstance(served, server_wire.ServedHostPort)
-        address = wire.HostPortAddress('127.0.0.1', served.port, wire.SESSION_PATH, '')
+        address = wire.HostPortAddress('127.0.0.1', served.port, wire.SESSION_PATH, query)
         client = InferenceClient(websocket.WebsocketClientWire(), address, headers={AUTH_HEADER: bearer(TOKEN)})
         client.keepalive()
         session = client.new_session()
         try:
-            return session.infer(obs)
+            return session.metadata, session.infer(obs)
         finally:
             session.close()
     finally:
@@ -89,17 +104,10 @@ def test_a_session_reaches_bfls_server_in_its_fields_and_gets_the_whole_chunk(tm
         flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE),
         backend_port=port,
     )
-    # The default pipeline serves an eval that renders one exterior view, as MolmoSpaces does.
-    obs = {
-        keys.WRIST_IMAGE: np.zeros((720, 1280, 3), dtype=np.uint8),
-        keys.EXTERIOR_IMAGE: np.zeros((480, 640, 3), dtype=np.uint8),
-        keys.JOINTS: np.arange(7, dtype=np.float32),
-        keys.GRIP: 0.25,
-        keys.TASK: 'put the cube in the bowl',
-    }
 
-    actions = _infer_in_a_session(PolicyServer(model, server.pipeline, auth_token=TOKEN), obs)
+    meta, actions = _session(PolicyServer(model, server.pipeline, auth_token=TOKEN), _observation())
 
+    assert meta[offboard_keys.LOCAL_STACK][SEQ][1][ARGS]['merge']['horizon_sec'] is None
     assert len(actions) == len(bfl_stand_in.CHUNK)
     for action, expected in zip(actions, bfl_stand_in.CHUNK, strict=True):
         np.testing.assert_allclose(action[keys.ROBOT_COMMAND].positions, expected[:7])
@@ -125,6 +133,20 @@ def test_a_session_reaches_bfls_server_in_its_fields_and_gets_the_whole_chunk(tm
         '--subfolder': SUBFOLDER,
     }
     assert not _alive(started['pid']), 'the server left the backend running after it stopped'
+
+
+def test_a_session_that_names_a_horizon_tells_the_client_to_play_that_much_of_each_chunk(tmp_path):
+    model = server.flux3_action_model.override(
+        checkpoint=str(tmp_path), flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE), backend_port=_free_port()
+    )
+
+    meta, actions = _session(
+        PolicyServer(model, server.pipeline, auth_token=TOKEN), _observation(), query='horizon_sec=0.4'
+    )
+
+    assert meta[offboard_keys.LOCAL_STACK][SEQ][1][ARGS]['merge']['horizon_sec'] == 0.4
+    # The server sends the whole chunk, and the client stack discards the commands past the horizon.
+    assert len(actions) == len(bfl_stand_in.CHUNK)
 
 
 def test_a_local_policy_directory_reaches_the_backend_with_no_revision_and_no_subfolder(tmp_path):

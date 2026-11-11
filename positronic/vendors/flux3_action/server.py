@@ -6,7 +6,7 @@ The policy runs in Black Forest Labs' own interpreter, as `backend.py`, behind B
 Usage
   python -m positronic.vendors.flux3_action.server droid --model.flux_python=<BFL's python> \
       --model.checkpoint=black-forest-labs/flux-3-action-droid --model.revision=<commit> \
-      --model.subfolder=variants/gd
+      --model.subfolder=variants/gd [--pipeline.horizon_sec=<seconds>]
 """
 
 import subprocess
@@ -123,12 +123,15 @@ def flux3_action_model(
 
 
 @cfn.config(codec=codecs.droid)
-def pipeline(codec: Codec) -> PolicyDeployment:
-    """The client plays each chunk whole, as BFL's DROID settings do, and `codec` runs on this server."""
+def pipeline(codec: Codec, horizon_sec: float | None = None) -> PolicyDeployment:
+    """The client plays `horizon_sec` of each chunk, and `codec` runs on this server.
+
+    With no `horizon_sec` the client plays each chunk whole, as BFL's DROID settings do.
+    """
     return PolicyDeployment(
         Sequential(
             TrajectoryPlayer(replan_on_error=True),
-            ChunkedSchedule(codecs.FPS),
+            ChunkedSchedule(codecs.FPS, horizon_sec),
             TransformImages(*codecs.VIEW_SIZE, mode=ResizeMode.BOUND),
         ),
         codec,
