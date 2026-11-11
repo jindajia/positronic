@@ -4,7 +4,7 @@ It runs in BFL's own environment, so it imports nothing from positronic.
 
 Usage
   python -P backend.py --checkpoint black-forest-labs/flux-3-action-droid --revision <commit> \
-      --subfolder variants/gd [--port 9000]
+      --subfolder variants/gd [--num-inference-steps 2] [--port 9000]
 """
 
 import argparse
@@ -18,6 +18,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument('--checkpoint', required=True, help='a Hugging Face repository id or a local directory')
     parser.add_argument('--revision', help='the repository commit')
     parser.add_argument('--subfolder', help='the policy package in the repository, e.g. variants/gd')
+    parser.add_argument('--num-inference-steps', type=int, help='the denoising steps of each chunk')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=9000)
     args = parser.parse_args(argv)
@@ -37,12 +38,15 @@ def main(argv: list[str] | None = None) -> None:
         device='cuda',
         dtype='bfloat16',
         offload_text_encoder=True,
+        # BFL's loader writes `settings` over the sampler settings of the policy package.
+        settings=None if args.num_inference_steps is None else {'num_inference_steps': args.num_inference_steps},
     )
     policy.set_text_encoder_offload(False)
     metadata = {
         'checkpoint': args.checkpoint,
         'revision': args.revision,
         'subfolder': args.subfolder,
+        'num_inference_steps': policy.config.num_inference_steps,
         'serving_setup': policy.serving_setup,
     }
     # The bind comes after the warm-up, because an open port tells `server.py` that the model can serve.

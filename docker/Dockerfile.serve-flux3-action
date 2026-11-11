@@ -154,10 +154,13 @@ ENV HF_HUB_OFFLINE=1 \
     UV_OFFLINE=1 \
     UV_NO_SYNC=1
 
-# The seconds of each chunk the client plays. Empty plays the whole chunk. The platform passes no argument,
-# so an image states its own value. No step follows these lines, so a new value reuses every layer.
+# The seconds of each chunk the client plays, and the denoising steps of each chunk. Empty plays the whole chunk,
+# and takes the step count of the policy package. The platform passes no argument, so an image states its own
+# values. No step follows these lines, so a new value reuses every layer.
 ARG FLUX_HORIZON_SEC=
-ENV FLUX_HORIZON_SEC=${FLUX_HORIZON_SEC}
+ARG FLUX_NUM_INFERENCE_STEPS=
+ENV FLUX_HORIZON_SEC=${FLUX_HORIZON_SEC} \
+    FLUX_NUM_INFERENCE_STEPS=${FLUX_NUM_INFERENCE_STEPS}
 
 EXPOSE 8000
 
@@ -166,7 +169,8 @@ ENTRYPOINT ["/bin/sh", "-c", \
   "exec /positronic/.venv/bin/python -m positronic.vendors.flux3_action.server droid \
    --model.flux_python=/opt/flux-action/.venv/bin/python --model.checkpoint=\"$FLUX_POLICY_REPO\" \
    --model.revision=\"$FLUX_POLICY_REVISION\" --model.subfolder=\"$FLUX_POLICY_SUBFOLDER\" \
-   ${FLUX_HORIZON_SEC:+--pipeline.horizon_sec=\"$FLUX_HORIZON_SEC\"} \"$@\"", "--"]
+   ${FLUX_HORIZON_SEC:+--pipeline.horizon_sec=\"$FLUX_HORIZON_SEC\"} \
+   ${FLUX_NUM_INFERENCE_STEPS:+--model.num_inference_steps=\"$FLUX_NUM_INFERENCE_STEPS\"} \"$@\"", "--"]
 
 LABEL org.opencontainers.image.title="flux3-action" \
     org.opencontainers.image.description="FLUX 3 Action DROID (guidance-distilled BF16), its video VAE and text encoder, served over positronic's session protocol. FLUX Kommunity License v1.0, non-commercial use only: see /opt/flux3_action/NOTICE." \

@@ -6,7 +6,7 @@ The policy runs in Black Forest Labs' own interpreter, as `backend.py`, behind B
 Usage
   python -m positronic.vendors.flux3_action.server droid --model.flux_python=<BFL's python> \
       --model.checkpoint=black-forest-labs/flux-3-action-droid --model.revision=<commit> \
-      --model.subfolder=variants/gd [--pipeline.horizon_sec=<seconds>]
+      --model.subfolder=variants/gd [--model.num_inference_steps=<count>] [--pipeline.horizon_sec=<seconds>]
 """
 
 import subprocess
@@ -77,14 +77,20 @@ def _warm_observation() -> dict[str, Any]:
     })
 
 
-@cfn.config(revision=None, subfolder=None, backend_port=9000)
+@cfn.config(revision=None, subfolder=None, backend_port=9000, num_inference_steps=None)
 def flux3_action_model(
-    checkpoint: str, revision: str | None, subfolder: str | None, flux_python: str, backend_port: int
+    checkpoint: str,
+    revision: str | None,
+    subfolder: str | None,
+    flux_python: str,
+    backend_port: int,
+    num_inference_steps: int | None,
 ) -> Model:
     """The policy package at `checkpoint`, served by `backend.py` in BFL's interpreter `flux_python`.
 
     `checkpoint` is a Hugging Face repository id, with a `revision` and a `subfolder`, or a local directory with
-    neither.
+    neither. `num_inference_steps` is the count of denoising steps of each chunk. With `None` the policy package
+    states the count.
     """
     # `-P` keeps this directory off the module path, so a positronic module here cannot shadow one of BFL's.
     command: list[str | Path] = [
@@ -96,15 +102,20 @@ def flux3_action_model(
         '--port',
         str(backend_port),
     ]
-    for flag, value in (('--revision', revision), ('--subfolder', subfolder)):
+    for flag, value in (
+        ('--revision', revision),
+        ('--subfolder', subfolder),
+        ('--num-inference-steps', num_inference_steps),
+    ):
         if value is not None:
-            command += [flag, value]
+            command += [flag, str(value)]
     backend = subprocess.Popen(command)
     meta = {
         policy_keys.CHECKPOINT_ID: checkpoint,
         policy_keys.TYPE: 'flux3_action',
         'revision': revision,
         'subfolder': subfolder,
+        'num_inference_steps': num_inference_steps,
     }
     model = Flux3ActionModel(backend, backend_port, meta)
     try:

@@ -158,6 +158,21 @@ def test_a_local_policy_directory_reaches_the_backend_with_no_revision_and_no_su
     assert dict(zip(argv[2::2], argv[3::2], strict=True)).keys() == {'--checkpoint', '--port'}
 
 
+def test_a_denoising_step_count_reaches_the_backend_and_the_session_metadata(tmp_path):
+    model = server.flux3_action_model(
+        checkpoint=str(tmp_path),
+        flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE),
+        backend_port=_free_port(),
+        num_inference_steps=2,
+    )
+    try:
+        assert model.meta()['num_inference_steps'] == 2
+    finally:
+        model.close()
+    argv = _log(tmp_path)[0]['argv']
+    assert dict(zip(argv[2::2], argv[3::2], strict=True))['--num-inference-steps'] == '2'
+
+
 def test_a_warm_up_the_backend_refuses_fails_the_load_and_stops_the_backend(tmp_path):
     with pytest.raises(TextAnswer, match='the policy refused the request'):
         server.flux3_action_model(
