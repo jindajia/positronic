@@ -27,10 +27,10 @@ class StepsPerRequest:
         self._adapter = robolab.RoboLabPolicy(policy)
         self._package_steps = policy.config.num_inference_steps
 
-    def infer(self, obs: dict) -> dict:
+    def infer(self, obs: dict, *, seed: int | None = None) -> dict:
         # BFL's policy reads the count from its config at each call.
         self._policy.config.num_inference_steps = obs.pop(NUM_INFERENCE_STEPS, self._package_steps)
-        return self._adapter.infer(obs)
+        return self._adapter.infer(obs, seed=seed)
 
 
 def main(argv: list[str] | None = None) -> None:
