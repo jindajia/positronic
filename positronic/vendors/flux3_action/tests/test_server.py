@@ -21,7 +21,8 @@ from positronic import keys
 from positronic.offboard import roboarena
 from positronic.offboard.client import InferenceClient
 from positronic.offboard.server import PolicyServer
-from positronic.vendors.flux3_action import server
+from positronic.vendors import flux3_action
+from positronic.vendors.flux3_action import codecs, server
 from positronic.vendors.flux3_action.tests import bfl_stand_in
 
 TOKEN = 'run-token'
@@ -158,19 +159,30 @@ def test_a_local_policy_directory_reaches_the_backend_with_no_revision_and_no_su
     assert dict(zip(argv[2::2], argv[3::2], strict=True)).keys() == {'--checkpoint', '--port'}
 
 
-def test_a_denoising_step_count_reaches_the_backend_and_the_session_metadata(tmp_path):
-    model = server.flux3_action_model(
-        checkpoint=str(tmp_path),
-        flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE),
-        backend_port=_free_port(),
-        num_inference_steps=2,
+def test_a_session_that_names_a_denoising_step_count_sends_it_with_each_request(tmp_path):
+    model = server.flux3_action_model.override(
+        checkpoint=str(tmp_path), flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE), backend_port=_free_port()
     )
-    try:
-        assert model.meta()['num_inference_steps'] == 2
-    finally:
-        model.close()
-    argv = _log(tmp_path)[0]['argv']
-    assert dict(zip(argv[2::2], argv[3::2], strict=True))['--num-inference-steps'] == '2'
+
+    meta, actions = _session(
+        PolicyServer(model, server.pipeline, auth_token=TOKEN), _observation(), query='num_inference_steps=2'
+    )
+
+    assert meta[codecs.NUM_INFERENCE_STEPS_META] == 2
+    assert _log(tmp_path)[-1]['request'][flux3_action.NUM_INFERENCE_STEPS] == 2
+    assert len(actions) == len(bfl_stand_in.CHUNK)
+
+
+@pytest.mark.parametrize('count', ['0', '1.5', '"two"'])
+def test_a_session_that_names_no_positive_whole_step_count_is_refused(tmp_path, count):
+    model = server.flux3_action_model.override(
+        checkpoint=str(tmp_path), flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE), backend_port=_free_port()
+    )
+
+    with pytest.raises(RuntimeError, match='num_inference_steps must be a positive integer'):
+        _session(
+            PolicyServer(model, server.pipeline, auth_token=TOKEN), _observation(), query=f'num_inference_steps={count}'
+        )
 
 
 def test_a_warm_up_the_backend_refuses_fails_the_load_and_stops_the_backend(tmp_path):

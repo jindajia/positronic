@@ -122,12 +122,14 @@ submission.
   both exterior slots, so it runs on every eval. An eval with two exterior views, such as RoboLab or
   a DROID rig, runs better on `droid_3cam`: to select it in your own image, change `droid` to
   `droid_3cam` in the recipe's `ENTRYPOINT`.
-- The client plays each chunk whole: 32 actions in 2.1 s. To play less of each chunk in your own image,
-  build the recipe with `--build-arg FLUX_HORIZON_SEC=<seconds>`. A session on a remote endpoint states
-  `horizon_sec` in its query.
-- The policy denoises each chunk in the 4 steps its package states. To take fewer in your own image,
-  build the recipe with `--build-arg FLUX_NUM_INFERENCE_STEPS=<count>`. BFL published `variants/gd`
-  for 4 steps: a lower count is faster, and its effect on the actions is not measured here.
+- A session sets two values in its URL query. `horizon_sec` is the seconds of each chunk the client plays.
+  `num_inference_steps` is the count of denoising steps of each chunk. One image serves every value.
+- A session that names neither plays each chunk whole, 32 actions in 2.1 s, and takes the 4 steps the
+  policy package states. BFL published `variants/gd` for 4 steps: a lower count is faster, and its effect
+  on the actions is not measured here.
+- An eval plan states no query for an image endpoint, so an image run takes the values the image states.
+  To state them in your own image, build the recipe with `--build-arg FLUX_HORIZON_SEC=<seconds>` and
+  `--build-arg FLUX_NUM_INFERENCE_STEPS=<count>`.
 - BFL's server compiles the model for about 140 s, and port 8000 binds after it. The GPU memory peaks
   at about 33 000 MiB.
 - `black-forest-labs/flux-3-action-droid` and `black-forest-labs/flux-3-action-base` are gated. Accept

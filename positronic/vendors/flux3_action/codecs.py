@@ -3,12 +3,33 @@ decode its actions as commands."""
 
 from positronic import keys
 from positronic.cfg import codecs
+from positronic.policy.codecs import Codec
 from positronic.vendors import flux3_action
 
 # The policy learned from DROID recordings at 15 Hz, and it predicts actions at that rate.
 FPS = 15.0
 # Each view has this (width, height). BFL's server refuses a wrist view of another size.
 VIEW_SIZE = (640, 360)
+
+# The session metadata field that names the denoising step count a session asks for.
+NUM_INFERENCE_STEPS_META = 'flux3_action.num_inference_steps'
+
+
+class DenoisingSteps(Codec):
+    """Asks `backend.py` for `count` denoising steps of each chunk."""
+
+    def __init__(self, count: int):
+        if type(count) is not int or count < 1:
+            raise ValueError(f'num_inference_steps must be a positive integer, got {count!r}')
+        self._count = count
+
+    def encode(self, data: dict) -> dict:
+        return {flux3_action.NUM_INFERENCE_STEPS: self._count}
+
+    @property
+    def meta(self) -> dict:
+        return {NUM_INFERENCE_STEPS_META: self._count}
+
 
 _views_3cam = {
     flux3_action.WRIST_IMAGE: (keys.WRIST_IMAGE, VIEW_SIZE),

@@ -9,3 +9,5 @@ EXTERIOR_IMAGE_1 = 'observation/exterior_image_1_left'
 EXTERIOR_IMAGE_2 = 'observation/exterior_image_2_left'
 PROMPT = 'prompt'
 ACTIONS = 'action'
+# A request field that `backend.py` reads and BFL's server never sees: the denoising steps of that chunk.
+NUM_INFERENCE_STEPS = 'num_inference_steps'
