@@ -11,3 +11,5 @@ PROMPT = 'prompt'
 ACTIONS = 'action'
 # A request field that `backend.py` reads and BFL's server never sees: the denoising steps of that chunk.
 NUM_INFERENCE_STEPS = 'num_inference_steps'
+# A request field that `server.py` reads and removes: what the client says of this call and of the ones before it.
+CALL = 'call'

@@ -9,7 +9,10 @@ Usage
       --model.subfolder=variants/gd [--pipeline.horizon_sec=<seconds>] [--pipeline.num_inference_steps=<count>]
 """
 
+import json
+import logging
 import subprocess
+import time
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -33,6 +36,13 @@ from positronic.vendors import flux3_action
 from positronic.vendors.flux3_action import codecs
 
 BACKEND_SCRIPT = Path(__file__).with_name('backend.py')
+# The word that opens each line of the request log. A JSON object follows it.
+REQUEST_LOG = 'flux3_request'
+# The request log's own fields.
+LOG_SESSION = 'session'
+LOG_BACKEND_MS = 'backend_ms'
+
+logger = logging.getLogger(__name__)
 
 
 class Flux3ActionModel(Model):
@@ -44,7 +54,20 @@ class Flux3ActionModel(Model):
         self._meta = meta
 
     def __call__(self, obs: Obs, *, session_id: str) -> list[dict[str, Any]]:
-        return [{ACTION: action} for action in self._client.infer(obs)[flux3_action.ACTIONS]]
+        request = dict(obs)
+        call = request.pop(flux3_action.CALL, {})
+        started_ns = time.perf_counter_ns()
+        actions = self._client.infer(request)[flux3_action.ACTIONS]
+        # One line per request: the session, what the client says of the call, and what BFL's server took.
+        record = {
+            LOG_SESSION: session_id,
+            **call,
+            flux3_action.NUM_INFERENCE_STEPS: request.get(flux3_action.NUM_INFERENCE_STEPS),
+            LOG_BACKEND_MS: round((time.perf_counter_ns() - started_ns) / 1e6, 1),
+        }
+        # `default=str` keeps a value JSON cannot spell from failing the inference.
+        logger.info(f'{REQUEST_LOG} {json.dumps(record, default=str)}')
+        return [{ACTION: action} for action in actions]
 
     def meta(self) -> dict[str, Any]:
         return self._meta
@@ -134,6 +157,7 @@ def pipeline(
     """
     if num_inference_steps is not None:
         codec = codecs.DenoisingSteps(num_inference_steps) & codec
+    codec = codecs.CallRecord(horizon_sec) & codec
     return PolicyDeployment(
         Sequential(
             TrajectoryPlayer(replan_on_error=True),

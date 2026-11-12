@@ -3,7 +3,9 @@ decode its actions as commands."""
 
 from positronic import keys
 from positronic.cfg import codecs
+from positronic.policy import keys as policy_keys
 from positronic.policy.codecs import Codec
+from positronic.policy.processors import ChunkedSchedule
 from positronic.vendors import flux3_action
 
 # The policy learned from DROID recordings at 15 Hz, and it predicts actions at that rate.
@@ -29,6 +31,27 @@ class DenoisingSteps(Codec):
     @property
     def meta(self) -> dict:
         return {NUM_INFERENCE_STEPS_META: self._count}
+
+
+class CallRecord(Codec):
+    """Hands `server.py` what the client says of each call, for the server's request log.
+
+    The client's schedule numbers the calls of a session, and sends with each one how long the calls answered
+    since the last one took on its own clock. In a simulated trial that charges inference time, that is the time
+    the trial paid for the call. `horizon_sec` is the session's own, which no request states.
+    """
+
+    def __init__(self, horizon_sec: float | None):
+        self._horizon_sec = horizon_sec
+
+    def encode(self, data: dict) -> dict:
+        return {
+            flux3_action.CALL: {
+                policy_keys.CALL_ID: data.get(policy_keys.CALL_ID),
+                policy_keys.CALL_TIMINGS: [dict(timing) for timing in data.get(policy_keys.CALL_TIMINGS, ())],
+                ChunkedSchedule.HORIZON_SEC_ARG: self._horizon_sec,
+            }
+        }
 
 
 _views_3cam = {

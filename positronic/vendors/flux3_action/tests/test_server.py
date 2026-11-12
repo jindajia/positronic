@@ -1,6 +1,7 @@
 """The FLUX 3 Action server, run against a stand-in for BFL's interpreter and its RoboLab server."""
 
 import json
+import logging
 import os
 import socket
 import sys
@@ -21,6 +22,8 @@ from positronic import keys
 from positronic.offboard import roboarena
 from positronic.offboard.client import InferenceClient
 from positronic.offboard.server import PolicyServer
+from positronic.policy import keys as policy_keys
+from positronic.policy.processors import ChunkedSchedule
 from positronic.vendors import flux3_action
 from positronic.vendors.flux3_action import codecs, server
 from positronic.vendors.flux3_action.tests import bfl_stand_in
@@ -171,6 +174,34 @@ def test_a_session_that_names_a_denoising_step_count_sends_it_with_each_request(
     assert meta[codecs.NUM_INFERENCE_STEPS_META] == 2
     assert _log(tmp_path)[-1]['request'][flux3_action.NUM_INFERENCE_STEPS] == 2
     assert len(actions) == len(bfl_stand_in.CHUNK)
+
+
+def test_the_server_logs_each_request_with_what_the_client_says_of_the_call(tmp_path, caplog):
+    model = server.flux3_action_model.override(
+        checkpoint=str(tmp_path), flux_python=_flux_python(tmp_path, bfl_stand_in.Mode.SERVE), backend_port=_free_port()
+    )
+    earlier = [{policy_keys.CALL_ID: 2, policy_keys.ELAPSED_SEC: 0.5}]
+    obs = {**_observation(), policy_keys.CALL_ID: 3, policy_keys.CALL_TIMINGS: earlier}
+
+    with caplog.at_level(logging.INFO, logger=server.__name__):
+        meta, _actions = _session(
+            PolicyServer(model, server.pipeline, auth_token=TOKEN), obs, query='num_inference_steps=2&horizon_sec=0.5'
+        )
+
+    lines = [record.getMessage() for record in caplog.records if record.getMessage().startswith(server.REQUEST_LOG)]
+    # One warm-up request comes before the session's own, and it states no call.
+    warm_up, request = (json.loads(line.removeprefix(server.REQUEST_LOG)) for line in lines)
+    assert policy_keys.CALL_ID not in warm_up
+    assert request.pop(server.LOG_BACKEND_MS) > 0
+    assert request.pop(server.LOG_SESSION)
+    assert request == {
+        policy_keys.CALL_ID: 3,
+        policy_keys.CALL_TIMINGS: earlier,
+        ChunkedSchedule.HORIZON_SEC_ARG: 0.5,
+        flux3_action.NUM_INFERENCE_STEPS: 2,
+    }
+    # BFL's server never sees the field.
+    assert flux3_action.CALL not in _log(tmp_path)[-1]['request']
 
 
 @pytest.mark.parametrize('count', ['0', '1.5', '"two"'])
